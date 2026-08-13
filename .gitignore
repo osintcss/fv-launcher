@@ -1,5 +1,9 @@
 node_modules/
 dist/
 *.log
+.DS_Store
+
+# Downloaded third-party PPAPI plugins (see scripts/download-plugins.js).
+plugins/*
 
 !plugins/.gitkeep

@@ -35,7 +35,12 @@ function getFlashPluginPath() {
 }
 
 function getFlashVersion() {
-  return (process.platform === 'linux') ? '34.0.0.137' : '34.0.0.330';
+  const versions = {
+    win32: '34.0.0.376',
+    darwin: '34.0.0.372',
+    linux: '34.0.0.137'
+  };
+  return versions[process.platform] || '0.0.0.0';
 }
 
 function initializeFlash() {

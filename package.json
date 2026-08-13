@@ -4,12 +4,13 @@
   "description": "Cross-platform Flash player using Pepper Flash",
   "main": "main.js",
   "scripts": {
+    "download:plugins": "node scripts/download-plugins.js",
     "start": "electron .",
     "start:mac": "arch -x86_64 electron .",
-    "build": "electron-builder",
-    "build:mac": "electron-builder --mac --x64 --dir && codesign --force --deep --sign - 'dist/mac/Flash Player.app' && create-dmg --volname 'Flash Player' --window-pos 200 120 --window-size 600 400 --icon-size 100 --icon 'Flash Player.app' 150 185 --app-drop-link 450 185 'dist/Flash Player.dmg' 'dist/mac/Flash Player.app'",
-    "build:win": "electron-builder --win",
-    "build:linux": "electron-builder --linux"
+    "build": "npm run download:plugins && electron-builder",
+    "build:mac": "node scripts/download-plugins.js --platform darwin && electron-builder --mac --x64",
+    "build:win": "node scripts/download-plugins.js --platform win32 && electron-builder --win",
+    "build:linux": "node scripts/download-plugins.js --platform linux && electron-builder --linux"
   },
   "build": {
     "appId": "com.flash.player",

@@ -14,11 +14,11 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
         include:
           - os: macos-latest
-            build_cmd: npx electron-builder --mac --x64 --dir
+            build_cmd: npm run build:mac -- --dir
           - os: ubuntu-latest
-            build_cmd: npx electron-builder --linux --dir
+            build_cmd: npm run build:linux -- --dir
           - os: windows-latest
-            build_cmd: npx electron-builder --win --dir
+            build_cmd: npm run build:win -- --dir
 
     runs-on: ${{ matrix.os }}
 

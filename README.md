@@ -5,84 +5,51 @@ A cross-platform Electron-based Flash player using Clean Flash Player.
 ## Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Run the app
+npm run download:plugins
 npm start
 ```
 
-## Setup
+## Plugins
 
-### 1. Check for Updated Plugins (Optional)
+The PPAPI Flash plugins are third-party binaries and are intentionally not
+tracked in Git. `npm run download:plugins` downloads pinned upstream archives
+and verifies their SHA-256 checksums before installing the platform-specific
+plugin under `plugins/`.
 
-You should get the latest PPAPI Flash plugins available.
+The source versions are pinned in `scripts/download-plugins.js`:
 
-If the latest Windows and macOS version is 34.0.0.330, skip to step 3.
+- Windows: Clean Flash 34.0.0.376
+- macOS: Clean Flash 34.0.0.372
+- Linux: Clean Flash 34.0.0.137
 
-https://github.com/darktohka/clean-flash-builds
+To package for a specific platform, the plugin download is performed first:
 
-### 2. Update Bundled Plugins (Optional)
-
-Copy any updated plugins to the `plugins/` directory:
-
-```
-plugins/
-├── pepflashplayer.dll        (Windows 32-bit)
-├── pepflashplayer64.dll      (Windows 64-bit)
-├── flash.plugin              (macOS 64-bit)
-└── libpepflashplayer.so      (Linux 32-bit)
-└── libpepflashplayer64.so    (Linux 64-bit)
+```bash
+npm run build:win
+npm run build:mac
+npm run build:linux
 ```
 
-### 3. Configure Game URL
+## Configure Game URL
 
 By default, the app connects to `https://example.com/flash-game`.
 
-Change via environment variable (Windows):
+Windows:
+
 ```batch
 set GAME_URL=https://your-server.com/game && npm start
 ```
 
-Change via environment variable (macOS / Linux):
+macOS / Linux:
+
 ```bash
 GAME_URL=https://your-server.com/game npm start
 ```
 
-## Building Distributable
-
-### Prerequisites for macOS
-
-Install `create-dmg` for creating DMG installers:
-
-```bash
-brew install create-dmg
-```
-
-### Build Commands
-
-```bash
-# Build for current platform
-npm run build
-
-# Build for specific platform
-npm run build:mac
-npm run build:win
-npm run build:linux
-```
-
-Outputs go to the `dist/` directory.
-
 ## Requirements
 
 - Node.js 20+
-- PPAPI Flash plugins
-
-## Notes
-
-- This app uses Electron 11.5.0 for PPAPI support.
-- The latest Flash Player updates are provided by an Adobe partner.
-- This is for personal/educational use with your own Flash content.
 
 ## License
 
