@@ -36,7 +36,7 @@ legacy DMG toolchain required by the pinned Electron version.
 
 ## Configure Game URL
 
-The packaged launcher defaults to `https://fv.ktrestoration.xyz/`.
+The packaged launcher defaults to `https://fv.ktrestoration.xyz/login`.
 This is a public URL, so it is intentionally stored in source rather than a
 GitHub Secret. You can still override it locally with `GAME_URL`.
 
