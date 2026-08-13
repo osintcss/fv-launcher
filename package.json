@@ -7,10 +7,10 @@
     "download:plugins": "node scripts/download-plugins.js",
     "start": "electron .",
     "start:mac": "arch -x86_64 electron .",
-    "build": "npm run download:plugins && electron-builder",
-    "build:mac": "node scripts/download-plugins.js --platform darwin && electron-builder --mac --x64",
-    "build:win": "node scripts/download-plugins.js --platform win32 && electron-builder --win",
-    "build:linux": "node scripts/download-plugins.js --platform linux && electron-builder --linux"
+    "build": "npm run download:plugins && electron-builder --publish never",
+    "build:mac": "node scripts/download-plugins.js --platform darwin && electron-builder --mac --x64 --publish never",
+    "build:win": "node scripts/download-plugins.js --platform win32 && electron-builder --win --publish never",
+    "build:linux": "node scripts/download-plugins.js --platform linux && electron-builder --linux --publish never"
   },
   "build": {
     "appId": "com.flash.player",
