@@ -28,7 +28,7 @@ jobs:
           - name: macOS
             os: macos-latest
             command: npm run build:mac
-            asset_path: dist/*.dmg
+            asset_path: dist/*-macos.zip
             artifact_name: launcher-macos
           - name: Linux
             os: ubuntu-latest
@@ -51,13 +51,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      # electron-builder 22 calls /usr/bin/python while making a DMG. Modern
-      # macOS runners provide python3 but no longer include that legacy alias.
-      - name: Provide legacy Python alias (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: sudo ln -sf "$(command -v python3)" /usr/bin/python
 
       - name: Build launcher
         run: ${{ matrix.command }}

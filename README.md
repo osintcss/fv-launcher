@@ -31,6 +31,9 @@ npm run build:mac
 npm run build:linux
 ```
 
+The macOS build produces a ZIP containing `Flash Player.app`. This avoids the
+legacy DMG toolchain required by the pinned Electron version.
+
 ## Configure Game URL
 
 The packaged launcher defaults to `https://fv.ktrestoration.xyz/`.
