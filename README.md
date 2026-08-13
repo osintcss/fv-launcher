@@ -33,7 +33,9 @@ npm run build:linux
 
 ## Configure Game URL
 
-By default, the app connects to `https://example.com/flash-game`.
+The packaged launcher defaults to `https://fv.ktrestoration.xyz/`.
+This is a public URL, so it is intentionally stored in source rather than a
+GitHub Secret. You can still override it locally with `GAME_URL`.
 
 Windows:
 

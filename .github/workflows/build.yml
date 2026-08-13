@@ -1,39 +1,83 @@
-name: Build Test
+name: Build and Release Launcher
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: launcher-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-        include:
-          - os: macos-latest
-            build_cmd: npm run build:mac -- --dir
-          - os: ubuntu-latest
-            build_cmd: npm run build:linux -- --dir
-          - os: windows-latest
-            build_cmd: npm run build:win -- --dir
-
+    name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            command: npm run build:win
+            asset_path: dist/*.exe
+            artifact_name: launcher-windows
+          - name: macOS
+            os: macos-latest
+            command: npm run build:mac
+            asset_path: dist/*.dmg
+            artifact_name: launcher-macos
+          - name: Linux
+            os: ubuntu-latest
+            command: npm run build:linux
+            asset_path: dist/*.AppImage
+            artifact_name: launcher-linux
+
+    permissions:
+      contents: read
 
     steps:
-      - name: Checkout
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: ${{ matrix.build_cmd }}
+      - name: Build launcher
+        run: ${{ matrix.command }}
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.asset_path }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download packaged launchers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: FV Launcher v1.0.${{ github.run_number }}
+          generate_release_notes: true
+          files: release-assets/*

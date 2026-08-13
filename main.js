@@ -2,8 +2,12 @@ const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron')
 const path = require('path');
 const fs = require('fs');
 
+const DEFAULT_GAME_URL = 'https://fv.ktrestoration.xyz/';
+
 const CONFIG = {
-  gameUrl: process.env.GAME_URL || 'https://example.com/flash-game',
+  // GAME_URL is an optional local override. The packaged launcher defaults to
+  // the public FarmVille Restoration server below.
+  gameUrl: process.env.GAME_URL || DEFAULT_GAME_URL,
   fullscreen: false,
   width: 1280,
   height: 800,
