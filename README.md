@@ -20,7 +20,7 @@ plugin under `plugins/`.
 The source versions are pinned in `scripts/download-plugins.js`:
 
 - Windows: Clean Flash 34.0.0.376
-- macOS: Clean Flash 34.0.0.277 (test build)
+- macOS: Clean Flash 34.0.0.372
 - Linux: Clean Flash 34.0.0.137
 
 To package for a specific platform, the plugin download is performed first:
@@ -33,6 +33,28 @@ npm run build:linux
 
 The macOS build produces a ZIP containing `Flash Player.app`. This avoids the
 legacy DMG toolchain required by the pinned Electron version.
+
+### macOS Flash runtime patch
+
+The macOS PPAPI plug-in is not committed to this repository. The upstream
+`34.0.0.372` archive contains a `PepperFlashPlayer` executable whose five
+runtime-gate patches are still in their original, unpatched state. That gate
+shows the in-player **“Please update to the latest version to continue”**
+screen, independently of the FarmVille page or SWF files.
+
+`scripts/download-plugins.js` applies the five version-specific macOS PPAPI
+patches published by [FlashPatch](https://github.com/darktohka/FlashPatch) as
+part of `npm run build:mac`. Each patch is guarded: the downloader first
+requires the exact expected original bytes at its fixed offset, writes the
+documented replacement bytes, and then verifies the SHA-256 of the resulting
+`PepperFlashPlayer` executable. A changed or unexpected upstream binary fails
+the build instead of being silently patched.
+
+This was diagnosed by comparing the bundled executable with FlashPatch's
+`34.0.0.372` Mac PPAPI patch definition. All five offsets initially matched
+the original byte patterns (for example, offset `0x56C3F9` was `74 4C` rather
+than FlashPatch's `90 90`), proving that the update screen came from the
+runtime binary rather than the server template or the game SWF.
 
 ## Configure Game URL
 
