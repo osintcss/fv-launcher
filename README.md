@@ -20,7 +20,7 @@ plugin under `plugins/`.
 The source versions are pinned in `scripts/download-plugins.js`:
 
 - Windows: Clean Flash 34.0.0.376
-- macOS: Clean Flash 34.0.0.372
+- macOS: Clean Flash 34.0.0.277 (test build)
 - Linux: Clean Flash 34.0.0.137
 
 To package for a specific platform, the plugin download is performed first:

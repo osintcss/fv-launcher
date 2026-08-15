@@ -28,14 +28,14 @@ const SOURCES = {
     ]
   },
   darwin: {
-    url: 'https://github.com/darktohka/clean-flash-builds/releases/download/v1.53/ChineseFlash-PPAPI-PepperFlashPlayer.zip',
-    archiveSha256: '2ce195d5ffded257320bfd31887f78079af85499987d1b9bc8e603202427f58b',
+    url: 'https://github.com/darktohka/clean-flash-builds/releases/download/v1.31/ChineseFlash-PPAPI-PepperFlashPlayer.zip',
+    archiveSha256: 'cd51f655c3ecee2a1d2516efda9680b8d0ac17afe6ec7e76afca7739d8f3244b',
     files: [{ name: 'flash.plugin', candidates: ['flash.plugin'], directory: true }]
   }
 };
 
 const EXPECTED_SHA256 = {
-  'flash.plugin': '555d8be93c491db65a97ae1de86f921ddb850eeb3213d8cd9bac20245bdc5c3a',
+  'flash.plugin': '1f9a418281ff621149b583e8a2e58f810592f13540d435f580a558c352aaef99',
   'libpepflashplayer.so': 'b09c817ad1d7f0193b79903a07424394c344a7345b849f87b3a938955926ab6f',
   'libpepflashplayer64.so': 'e66c93332824bce66cb862a0b7d5b175f9d5d78b296c1524dfa393ee516b0a7d',
   'pepflashplayer.dll': 'a56a9eb638d1708333b8d9acabf73fb9ff998707f7bdfc8de739eae989b5c21c',
