@@ -1,13 +1,34 @@
 const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
+const http = require('http');
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 
 const DEFAULT_GAME_URL = 'https://fv.ktrestoration.xyz/login';
 
+function parseGameUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('GAME_URL must be a valid URL');
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('GAME_URL must use HTTPS');
+  }
+
+  parsed.hash = '';
+  return parsed;
+}
+
+const initialGameUrl = parseGameUrl(process.env.GAME_URL || DEFAULT_GAME_URL);
+
 const CONFIG = {
   // GAME_URL is an optional local override. The packaged launcher defaults to
   // the public FarmVille Restoration server below.
-  gameUrl: process.env.GAME_URL || DEFAULT_GAME_URL,
+  gameUrl: initialGameUrl.toString(),
+  allowedOrigin: initialGameUrl.origin,
   fullscreen: false,
   width: 1280,
   height: 800,
@@ -62,12 +83,44 @@ function initializeFlash() {
   app.commandLine.appendSwitch('ppapi-flash-version', getFlashVersion());
   app.commandLine.appendSwitch('enable-plugins');
   app.commandLine.appendSwitch('allow-outdated-plugins');
-  app.commandLine.appendSwitch('no-sandbox');
-  app.commandLine.appendSwitch('disable-web-security');
-  app.commandLine.appendSwitch('ignore-certificate-errors');
-  app.commandLine.appendSwitch('disable-features', 'BlockInsecurePrivateNetworkRequests');
-
   return true;
+}
+
+function isAllowedGameUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && parsed.origin === CONFIG.allowedOrigin;
+  } catch {
+    return false;
+  }
+}
+
+function isDiscordLoginRequest(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:'
+      && parsed.origin === CONFIG.allowedOrigin
+      && parsed.pathname === '/auth/discord';
+  } catch {
+    return false;
+  }
+}
+
+function base64Url(value) {
+  return value.toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function escapeHtml(value) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[character]));
 }
 
 function showUrlPrompt(currentUrl) {
@@ -85,7 +138,8 @@ function showUrlPrompt(currentUrl) {
       show: false,
       webPreferences: {
         nodeIntegration: true,
-        contextIsolation: false
+        contextIsolation: false,
+        sandbox: false
       }
     });
 
@@ -109,7 +163,7 @@ function showUrlPrompt(currentUrl) {
       </head>
       <body>
         <h3>Enter Server URL</h3>
-        <input type="text" id="url" value="${currentUrl}">
+        <input type="text" id="url" value="${escapeHtml(currentUrl)}">
         <div class="buttons">
           <button class="cancel" id="cancelBtn">Cancel</button>
           <button class="ok" id="okBtn">OK</button>
@@ -171,6 +225,90 @@ function showUrlPrompt(currentUrl) {
 
 let mainWindow;
 let flashAvailable = false;
+let launcherLoginInProgress = false;
+
+function beginLauncherDiscordLogin(loginUrl) {
+  if (launcherLoginInProgress) return;
+  launcherLoginInProgress = true;
+
+  const state = base64Url(crypto.randomBytes(32));
+  const intent = new URL(loginUrl).searchParams.get('intent') === 'register' ? 'register' : 'login';
+  let callbackServer;
+  let timeout;
+
+  const finish = (result) => {
+    if (timeout) clearTimeout(timeout);
+    launcherLoginInProgress = false;
+    if (callbackServer && callbackServer.listening) callbackServer.close();
+
+    if (result.error) {
+      dialog.showErrorBox('Discord Sign-In Failed', result.error);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(CONFIG.gameUrl);
+      return;
+    }
+
+    if (!result.token) {
+      dialog.showErrorBox('Discord Sign-In Failed', 'The launcher did not receive a sign-in token.');
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(CONFIG.gameUrl);
+      return;
+    }
+
+    const consumeUrl = new URL('/auth/discord/launcher/consume', `${CONFIG.allowedOrigin}/`);
+    consumeUrl.searchParams.set('token', result.token);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.loadURL(consumeUrl.toString());
+  };
+
+  callbackServer = http.createServer((request, response) => {
+    const requestUrl = new URL(request.url || '/', 'http://127.0.0.1');
+    if (request.method !== 'GET' || requestUrl.pathname !== '/callback') {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    const returnedState = requestUrl.searchParams.get('state') || '';
+    if (returnedState !== state) {
+      response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Invalid sign-in state. You can close this window.');
+      finish({ error: 'The Discord sign-in could not be verified. Please try again.' });
+      return;
+    }
+
+    const error = requestUrl.searchParams.get('error');
+    const token = requestUrl.searchParams.get('token');
+    response.writeHead(200, {
+      'Cache-Control': 'no-store',
+      'Content-Type': 'text/html; charset=utf-8'
+    });
+    response.end('<!doctype html><title>FV Launcher</title><p>Sign-in complete. You can return to the launcher.</p>');
+    finish({ error, token });
+  });
+
+  callbackServer.once('error', () => {
+    finish({ error: 'The launcher could not start its local sign-in callback.' });
+  });
+
+  callbackServer.listen(0, '127.0.0.1', () => {
+    const address = callbackServer.address();
+    if (!address || typeof address === 'string') {
+      finish({ error: 'The launcher could not determine its local sign-in port.' });
+      return;
+    }
+
+    const authUrl = new URL('/auth/discord/launcher', `${CONFIG.allowedOrigin}/`);
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('callback', `http://127.0.0.1:${address.port}/callback`);
+    authUrl.searchParams.set('intent', intent);
+
+    Promise.resolve(shell.openExternal(authUrl.toString())).catch(() => {
+      finish({ error: 'The launcher could not open your default browser.' });
+    });
+  });
+
+  timeout = setTimeout(() => {
+    finish({ error: 'Discord sign-in timed out. Please try again.' });
+  }, 5 * 60 * 1000);
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -182,6 +320,7 @@ function createWindow() {
       plugins: true,
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       preload: path.join(__dirname, 'preload.js')
     },
     title: 'Flash Player',
@@ -199,7 +338,15 @@ function createWindow() {
           click: async () => {
             const newUrl = await showUrlPrompt(CONFIG.gameUrl);
             if (newUrl && newUrl !== CONFIG.gameUrl) {
-              CONFIG.gameUrl = newUrl;
+              let parsedUrl;
+              try {
+                parsedUrl = parseGameUrl(newUrl);
+              } catch (error) {
+                dialog.showErrorBox('Invalid Server URL', error.message);
+                return;
+              }
+              CONFIG.gameUrl = parsedUrl.toString();
+              CONFIG.allowedOrigin = parsedUrl.origin;
               console.log('Loading new URL:', CONFIG.gameUrl);
               mainWindow.loadURL(CONFIG.gameUrl);
             }
@@ -299,9 +446,22 @@ function createWindow() {
     mainWindow.loadFile('index.html');
   }
 
-  mainWindow.webContents.on('new-window', (event, url) => {
-    event.preventDefault();
-    shell.openExternal(url);
+  mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (isDiscordLoginRequest(navigationUrl)) {
+      event.preventDefault();
+      beginLauncherDiscordLogin(navigationUrl);
+      return;
+    }
+    if (!isAllowedGameUrl(navigationUrl)) event.preventDefault();
+  });
+
+  mainWindow.webContents.on('will-redirect', (event, navigationUrl) => {
+    if (!isAllowedGameUrl(navigationUrl)) event.preventDefault();
+  });
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedGameUrl(url)) shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   mainWindow.on('closed', () => {
@@ -329,8 +489,11 @@ app.on('window-all-closed', () => {
 });
 
 app.on('web-contents-created', (event, contents) => {
-  contents.on('new-window', (event, navigationUrl) => {
+  contents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(false);
+  });
+
+  contents.on('will-attach-webview', (event) => {
     event.preventDefault();
-    shell.openExternal(navigationUrl);
   });
 });

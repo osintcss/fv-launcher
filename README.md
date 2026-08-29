@@ -62,6 +62,16 @@ The packaged launcher defaults to `https://fv.ktrestoration.xyz/login`.
 This is a public URL, so it is intentionally stored in source rather than a
 GitHub Secret. You can still override it locally with `GAME_URL`.
 
+### Discord sign-in
+
+Discord sign-in is opened in the user's default browser because the legacy
+Electron/Chromium runtime is not able to reliably render the current Discord
+web application. When the sign-in link is selected, the launcher starts a
+loopback listener on `127.0.0.1`, opens the server's launcher OAuth endpoint,
+and receives a short-lived, one-time FarmVille handoff token after Discord
+authentication. The token is consumed immediately by the embedded game
+session and is never a Discord access token.
+
 Windows:
 
 ```batch
