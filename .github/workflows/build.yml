@@ -28,7 +28,7 @@ jobs:
           - name: macOS
             os: macos-latest
             command: npm run build:mac
-            asset_path: dist/*-macos.zip
+            asset_path: dist/*-macos-*.zip
             artifact_name: launcher-macos
           - name: Linux
             os: ubuntu-latest
@@ -48,6 +48,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Stamp release version
+        run: npm version 1.0.${{ github.run_number }} --no-git-tag-version --allow-same-version
 
       - name: Install dependencies
         run: npm ci

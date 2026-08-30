@@ -1,10 +1,13 @@
 const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
+const { spawn } = require('child_process');
 const http = require('http');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 
 const DEFAULT_GAME_URL = 'https://fv.ktrestoration.xyz/login';
+const DISCORD_BROWSER_SETTING = 'discordBrowserPath';
+const LAUNCHER_SETTINGS_FILE = 'launcher-settings.json';
 
 function parseGameUrl(value) {
   let parsed;
@@ -121,6 +124,328 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#39;'
   }[character]));
+}
+
+function getLauncherSettingsPath() {
+  return path.join(app.getPath('userData'), LAUNCHER_SETTINGS_FILE);
+}
+
+function readLauncherSettings() {
+  try {
+    const settings = JSON.parse(fs.readFileSync(getLauncherSettingsPath(), 'utf8'));
+    return settings && typeof settings === 'object' && !Array.isArray(settings)
+      ? settings
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLauncherSettings(settings) {
+  const settingsDirectory = app.getPath('userData');
+  fs.mkdirSync(settingsDirectory, { recursive: true });
+  fs.writeFileSync(
+    getLauncherSettingsPath(),
+    `${JSON.stringify(settings, null, 2)}\n`,
+    { encoding: 'utf8', mode: 0o600 }
+  );
+}
+
+function getConfiguredDiscordBrowserPath() {
+  const browserPath = readLauncherSettings()[DISCORD_BROWSER_SETTING];
+  return typeof browserPath === 'string' && browserPath.trim() !== ''
+    ? browserPath
+    : null;
+}
+
+function setConfiguredDiscordBrowserPath(browserPath) {
+  const settings = readLauncherSettings();
+  if (browserPath) {
+    settings[DISCORD_BROWSER_SETTING] = browserPath;
+  } else {
+    delete settings[DISCORD_BROWSER_SETTING];
+  }
+  writeLauncherSettings(settings);
+}
+
+function isBrowserExecutable(browserPath) {
+  if (typeof browserPath !== 'string' || !path.isAbsolute(browserPath)) {
+    return false;
+  }
+
+  try {
+    const file = fs.statSync(browserPath);
+    if (process.platform === 'darwin' && browserPath.toLowerCase().endsWith('.app')) {
+      return file.isDirectory();
+    }
+
+    if (!file.isFile()) {
+      return false;
+    }
+
+    if (process.platform === 'win32') {
+      return path.extname(browserPath).toLowerCase() === '.exe';
+    }
+
+    return (file.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+function getCommonWindowsBrowserPaths() {
+  if (process.platform !== 'win32') {
+    return [];
+  }
+
+  const roots = [
+    process.env.ProgramW6432,
+    process.env.ProgramFiles,
+    process.env['ProgramFiles(x86)'],
+    process.env.LOCALAPPDATA,
+  ].filter((root) => typeof root === 'string' && root !== '');
+
+  const candidates = [
+    {
+      name: 'Mozilla Firefox',
+      relativePaths: [
+        'Mozilla Firefox\\firefox.exe',
+        'Programs\\Mozilla Firefox\\firefox.exe',
+      ],
+    },
+    {
+      name: 'Opera GX',
+      relativePaths: [
+        'Programs\\Opera GX\\launcher.exe',
+        'Opera GX\\launcher.exe',
+      ],
+    },
+    {
+      name: 'Google Chrome',
+      relativePaths: [
+        'Google\\Chrome\\Application\\chrome.exe',
+        'Programs\\Google\\Chrome\\Application\\chrome.exe',
+      ],
+    },
+    {
+      name: 'Microsoft Edge',
+      relativePaths: ['Microsoft\\Edge\\Application\\msedge.exe'],
+    },
+    {
+      name: 'Brave',
+      relativePaths: ['BraveSoftware\\Brave-Browser\\Application\\brave.exe'],
+    },
+    {
+      name: 'Vivaldi',
+      relativePaths: ['Vivaldi\\Application\\vivaldi.exe'],
+    },
+    {
+      name: 'Opera',
+      relativePaths: [
+        'Opera\\launcher.exe',
+        'Programs\\Opera\\launcher.exe',
+      ],
+    },
+  ];
+  const found = [];
+  const seen = new Set();
+
+  for (const candidate of candidates) {
+    for (const root of roots) {
+      for (const relativePath of candidate.relativePaths) {
+        const browserPath = path.join(root, relativePath);
+        const normalizedPath = browserPath.toLowerCase();
+        if (seen.has(normalizedPath) || !isBrowserExecutable(browserPath)) {
+          continue;
+        }
+
+        seen.add(normalizedPath);
+        found.push({ name: candidate.name, path: browserPath });
+      }
+    }
+  }
+
+  return found;
+}
+
+async function browseForDiscordBrowser() {
+  const filters = process.platform === 'win32'
+    ? [{ name: 'Browser executable', extensions: ['exe'] }]
+    : undefined;
+  let result;
+  try {
+    result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose browser for Discord sign-in',
+      properties: ['openFile'],
+      filters,
+    });
+  } catch {
+    dialog.showErrorBox(
+      'Browser Selection Failed',
+      'The launcher could not open the browser selection dialog.'
+    );
+    return null;
+  }
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  const browserPath = result.filePaths[0];
+  if (!isBrowserExecutable(browserPath)) {
+    dialog.showErrorBox(
+      'Invalid Browser Executable',
+      process.platform === 'win32'
+        ? 'Choose a Windows browser .exe file.'
+        : 'Choose an executable browser application.'
+    );
+    return null;
+  }
+
+  return browserPath;
+}
+
+function saveDiscordBrowser(browserPath) {
+  try {
+    setConfiguredDiscordBrowserPath(browserPath);
+  } catch {
+    dialog.showErrorBox(
+      'Browser Preference Not Saved',
+      'The launcher could not save the selected browser preference.'
+    );
+    return false;
+  }
+
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: 'Discord Browser Saved',
+    message: 'Discord sign-in will use the selected browser.',
+    detail: browserPath,
+  });
+  return true;
+}
+
+async function chooseDiscordBrowser() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  const commonBrowsers = getCommonWindowsBrowserPaths();
+  let browserPath = null;
+
+  if (commonBrowsers.length > 0) {
+    let result;
+    try {
+      result = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        title: 'Choose browser for Discord sign-in',
+        message: 'Select a detected browser or browse for another executable.',
+        detail: commonBrowsers
+          .map((browser, index) => `${index + 1}. ${browser.name}\n${browser.path}`)
+          .join('\n\n'),
+        buttons: [
+          ...commonBrowsers.map((browser) => `Use ${browser.name}`),
+          'Browse...',
+          'Cancel',
+        ],
+        defaultId: 0,
+        cancelId: commonBrowsers.length + 1,
+        noLink: true,
+      });
+    } catch {
+      dialog.showErrorBox(
+        'Browser Selection Failed',
+        'The launcher could not open the browser selection dialog.'
+      );
+      return;
+    }
+
+    if (result.response < commonBrowsers.length) {
+      browserPath = commonBrowsers[result.response].path;
+    } else if (result.response === commonBrowsers.length) {
+      browserPath = await browseForDiscordBrowser();
+    } else {
+      return;
+    }
+  } else {
+    browserPath = await browseForDiscordBrowser();
+  }
+
+  if (browserPath) {
+    saveDiscordBrowser(browserPath);
+  }
+}
+
+function useDefaultDiscordBrowser() {
+  try {
+    setConfiguredDiscordBrowserPath(null);
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Default Browser Restored',
+      message: 'Discord sign-in will use the Windows default browser.',
+    });
+  } catch {
+    dialog.showErrorBox(
+      'Browser Preference Not Saved',
+      'The launcher could not clear the selected browser preference.'
+    );
+  }
+}
+
+function spawnDetached(command, args) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let child;
+
+    try {
+      child = spawn(command, args, {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    child.once('error', (error) => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    });
+    child.once('spawn', () => {
+      if (!settled) {
+        settled = true;
+        child.unref();
+        resolve();
+      }
+    });
+  });
+}
+
+function openDiscordBrowser(url) {
+  const browserPath = getConfiguredDiscordBrowserPath();
+  if (browserPath && isBrowserExecutable(browserPath)) {
+    if (process.platform === 'darwin' && browserPath.toLowerCase().endsWith('.app')) {
+      return spawnDetached('open', ['-a', browserPath, url]);
+    }
+
+    return spawnDetached(browserPath, [url]);
+  }
+
+  if (browserPath) {
+    // A browser can be uninstalled or moved after it was selected. Fall back
+    // to the OS association and remove the stale preference.
+    try {
+      setConfiguredDiscordBrowserPath(null);
+    } catch {
+      // The default-browser fallback is still safe if the preference cannot
+      // be removed.
+    }
+  }
+
+  return shell.openExternal(url);
 }
 
 function showUrlPrompt(currentUrl) {
@@ -300,8 +625,13 @@ function beginLauncherDiscordLogin(loginUrl) {
     authUrl.searchParams.set('callback', `http://127.0.0.1:${address.port}/callback`);
     authUrl.searchParams.set('intent', intent);
 
-    Promise.resolve(shell.openExternal(authUrl.toString())).catch(() => {
-      finish({ error: 'The launcher could not open your default browser.' });
+    const configuredBrowserPath = getConfiguredDiscordBrowserPath();
+    Promise.resolve(openDiscordBrowser(authUrl.toString())).catch(() => {
+      finish({
+        error: configuredBrowserPath
+          ? 'The launcher could not open the selected browser.'
+          : 'The launcher could not open your default browser.',
+      });
     });
   });
 
@@ -350,6 +680,18 @@ function createWindow() {
               console.log('Loading new URL:', CONFIG.gameUrl);
               mainWindow.loadURL(CONFIG.gameUrl);
             }
+          }
+        },
+        {
+          label: 'Choose Browser for Discord Sign-In...',
+          click: () => {
+            chooseDiscordBrowser();
+          }
+        },
+        {
+          label: 'Use Default Browser for Discord Sign-In',
+          click: () => {
+            useDefaultDiscordBrowser();
           }
         },
         { type: 'separator' },

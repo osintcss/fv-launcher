@@ -31,6 +31,12 @@ npm run build:mac
 npm run build:linux
 ```
 
+The GitHub Actions workflow stamps each build with `1.0.<run number>` before
+packaging. This keeps the app version and every release asset filename aligned
+with the published release tag (for example, `v1.0.5` produces a Windows
+asset named `Flash Player 1.0.5.exe`). Local builds use the version in
+`package.json`.
+
 The macOS build produces a ZIP containing `Flash Player.app`. This avoids the
 legacy DMG toolchain required by the pinned Electron version.
 
@@ -71,6 +77,14 @@ loopback listener on `127.0.0.1`, opens the server's launcher OAuth endpoint,
 and receives a short-lived, one-time FarmVille handoff token after Discord
 authentication. The token is consumed immediately by the embedded game
 session and is never a Discord access token.
+
+If the Windows default browser cannot open Discord correctly, use **File →
+Choose Browser for Discord Sign-In...** in the launcher. The chooser first
+lists common browsers it detects (including Firefox and Opera GX), and also
+offers **Browse...** for another executable. The selection is stored for future
+sign-ins. **Use Default Browser for Discord Sign-In** removes the override. The
+launcher always passes the same HTTPS OAuth URL and keeps the localhost callback
+flow.
 
 Windows:
 

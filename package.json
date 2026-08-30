@@ -1,6 +1,6 @@
 {
   "name": "flash-player",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Cross-platform Flash player using Pepper Flash",
   "main": "main.js",
   "scripts": {
@@ -8,7 +8,7 @@
     "start": "electron .",
     "start:mac": "arch -x86_64 electron .",
     "build": "npm run download:plugins && electron-builder --publish never",
-    "build:mac": "node scripts/download-plugins.js --platform darwin && electron-builder --mac --x64 --dir --publish never && ditto -c -k --sequesterRsrc --keepParent 'dist/mac/Flash Player.app' dist/FV-Launcher-macos.zip",
+    "build:mac": "node scripts/download-plugins.js --platform darwin && electron-builder --mac --x64 --dir --publish never && ditto -c -k --sequesterRsrc --keepParent 'dist/mac/Flash Player.app' dist/FV-Launcher-macos-${npm_package_version}.zip",
     "build:win": "node scripts/download-plugins.js --platform win32 && electron-builder --win --publish never",
     "build:linux": "node scripts/download-plugins.js --platform linux && electron-builder --linux --publish never"
   },
