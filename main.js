@@ -113,13 +113,16 @@ function diagnosticUrl(value) {
     const parsed = new URL(value);
     return `${parsed.origin}${parsed.pathname}`;
   } catch {
-    return String(value || '').slice(0, 400);
+    return null;
   }
 }
 
 function diagnosticMessage(value) {
   return String(value || '')
-    .replace(/([?&](?:token|code|state|callback|authorization|password)=)[^\s&]+/gi, '$1[redacted]')
+    .replace(/(?:https?|wss?):\/\/[^\s'"<>]+/gi, (url) => diagnosticUrl(url) || '[url]')
+    .replace(/(?:[A-Z]:\\|\/(?:Users|home|private\/var)\/)[^\s,;'"<>]+/gi, '[local-path]')
+    .replace(/([?&](?:token|code|state|callback|authorization|password|email|username|user_?id|discord_?id|session|cookie|secret|api_?key)=)[^\s&]+/gi, '$1[redacted]')
+    .replace(/(["']?(?:token|code|state|authorization|password|email|username|user_?id|discord_?id|session|cookie|secret|api_?key)["']?\s*[:=]\s*["']?)[^,\s}"']+/gi, '$1[redacted]')
     .slice(0, 800);
 }
 
@@ -140,8 +143,8 @@ function getFlashRuntimeDiagnostics() {
   const flashPath = getFlashPluginPath();
   const binaryPath = getFlashPluginBinaryPath(flashPath);
   const result = {
-    path: flashPath || null,
-    binaryPath,
+    plugin: flashPath ? path.basename(flashPath) : null,
+    binary: binaryPath ? path.basename(binaryPath) : null,
     expectedVersion: getFlashVersion(),
     available: hasFlashPlugin(flashPath),
   };
