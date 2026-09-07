@@ -801,9 +801,12 @@ function createWindow() {
     if (!isAllowedGameUrl(navigationUrl)) event.preventDefault();
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  // Electron 11 predates setWindowOpenHandler(); 'new-window' is the
+  // equivalent hook on this runtime. The pinned Electron version cannot be
+  // raised because Chromium dropped PPAPI/Flash support in Electron 12.
+  mainWindow.webContents.on('new-window', (event, url) => {
+    event.preventDefault();
     if (isAllowedGameUrl(url)) shell.openExternal(url);
-    return { action: 'deny' };
   });
 
   mainWindow.on('closed', () => {

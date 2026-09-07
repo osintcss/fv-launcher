@@ -4,6 +4,7 @@
   "description": "Cross-platform Flash player using Pepper Flash",
   "main": "main.js",
   "scripts": {
+    "postinstall": "node scripts/repair-electron-install.js",
     "download:plugins": "node scripts/download-plugins.js",
     "start": "electron .",
     "start:mac": "arch -x86_64 electron .",
