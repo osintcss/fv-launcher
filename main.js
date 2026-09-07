@@ -125,7 +125,6 @@ function restartWithSoftwareRendering(disabled) {
     child = spawn(process.execPath, args, {
       detached: true,
       stdio: 'ignore',
-      windowsHide: true,
     });
   } catch (error) {
     writeDiagnostic('restart-failed', {
@@ -138,10 +137,7 @@ function restartWithSoftwareRendering(disabled) {
     return;
   }
 
-  let settled = false;
   child.once('error', (error) => {
-    if (settled) return;
-    settled = true;
     writeDiagnostic('restart-failed', {
       error: diagnosticMessage(error && error.message),
     });
@@ -150,27 +146,11 @@ function restartWithSoftwareRendering(disabled) {
       'The launcher could not restart with the selected rendering mode. Please start it again normally.'
     );
   });
-  child.once('spawn', () => {
-    if (settled) return;
-    settled = true;
-    writeDiagnostic('restart-spawned', {
-      softwareRenderingRequested: disabled,
-    });
-    child.unref();
-    setTimeout(() => app.exit(0), 100);
+  writeDiagnostic('restart-spawned', {
+    softwareRenderingRequested: disabled,
   });
-
-  // Keep a failed spawn from leaving the old launcher open forever. The child
-  // is already detached, so this only covers an unusual missing event.
-  setTimeout(() => {
-    if (settled) return;
-    settled = true;
-    child.unref();
-    writeDiagnostic('restart-timeout', {
-      softwareRenderingRequested: disabled,
-    });
-    app.exit(0);
-  }, 2000).unref();
+  child.unref();
+  setTimeout(() => app.exit(0), 500);
 }
 
 function getDiagnosticLogPath() {
