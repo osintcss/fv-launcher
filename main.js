@@ -10,7 +10,6 @@ const DISCORD_BROWSER_SETTING = 'discordBrowserPath';
 const LAUNCHER_SETTINGS_FILE = 'launcher-settings.json';
 const DIAGNOSTIC_LOG_FILE = 'launcher-diagnostics.log';
 const DIAGNOSTIC_LOG_MAX_BYTES = 1024 * 1024;
-const SOFTWARE_RENDERING_SWITCH = '--disable-gpu';
 
 function parseGameUrl(value) {
   let parsed;
@@ -103,54 +102,6 @@ function initializeFlash() {
   app.commandLine.appendSwitch('enable-plugins');
   app.commandLine.appendSwitch('allow-outdated-plugins');
   return true;
-}
-
-function isSoftwareRenderingRequested() {
-  return process.argv.includes(SOFTWARE_RENDERING_SWITCH);
-}
-
-function restartWithSoftwareRendering(disabled) {
-  const args = process.argv.slice(1)
-    .filter((argument) => argument !== SOFTWARE_RENDERING_SWITCH);
-  if (disabled) args.push(SOFTWARE_RENDERING_SWITCH);
-
-  writeDiagnostic('restart-rendering-mode', {
-    softwareRenderingRequested: disabled,
-  });
-  let child;
-  try {
-    // app.relaunch() can report success without starting a portable Windows
-    // executable. Spawn the real executable directly and wait until the OS
-    // confirms the child exists before closing this instance.
-    child = spawn(process.execPath, args, {
-      detached: true,
-      stdio: 'ignore',
-    });
-  } catch (error) {
-    writeDiagnostic('restart-failed', {
-      error: diagnosticMessage(error && error.message),
-    });
-    dialog.showErrorBox(
-      'Launcher Restart Failed',
-      'The launcher could not restart with the selected rendering mode. Please start it again normally.'
-    );
-    return;
-  }
-
-  child.once('error', (error) => {
-    writeDiagnostic('restart-failed', {
-      error: diagnosticMessage(error && error.message),
-    });
-    dialog.showErrorBox(
-      'Launcher Restart Failed',
-      'The launcher could not restart with the selected rendering mode. Please start it again normally.'
-    );
-  });
-  writeDiagnostic('restart-spawned', {
-    softwareRenderingRequested: disabled,
-  });
-  child.unref();
-  setTimeout(() => app.exit(0), 500);
 }
 
 function getDiagnosticLogPath() {
@@ -956,12 +907,6 @@ function createWindow() {
             mainWindow.reload();
           }
         },
-        {
-          label: isSoftwareRenderingRequested()
-            ? 'Restart with Hardware Acceleration'
-            : 'Restart with Software Rendering',
-          click: () => restartWithSoftwareRendering(!isSoftwareRenderingRequested())
-        },
         { type: 'separator' },
         { role: 'quit' }
       ]
@@ -1086,7 +1031,6 @@ app.whenReady().then(() => {
     architecture: process.arch,
     electron: process.versions.electron,
     chrome: process.versions.chrome,
-    softwareRenderingRequested: isSoftwareRenderingRequested(),
     flashInitialized: flashAvailable,
     flashRuntime: getFlashRuntimeDiagnostics(),
   });
