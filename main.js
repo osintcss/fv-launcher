@@ -117,8 +117,24 @@ function restartWithSoftwareRendering(disabled) {
   writeDiagnostic('restart-rendering-mode', {
     softwareRenderingRequested: disabled,
   });
-  app.relaunch({ args });
-  app.exit(0);
+  try {
+    // Packaged Windows launchers can have a helper executable as the current
+    // process path. Explicitly naming the application executable prevents
+    // app.relaunch() from trying to restart that helper instead of the app.
+    app.relaunch({ execPath: process.execPath, args });
+    writeDiagnostic('restart-scheduled', {
+      softwareRenderingRequested: disabled,
+    });
+    app.exit(0);
+  } catch (error) {
+    writeDiagnostic('restart-failed', {
+      error: diagnosticMessage(error && error.message),
+    });
+    dialog.showErrorBox(
+      'Launcher Restart Failed',
+      'The launcher could not restart with the selected rendering mode. Please start it again normally.'
+    );
+  }
 }
 
 function getDiagnosticLogPath() {
