@@ -10,6 +10,7 @@ const DISCORD_BROWSER_SETTING = 'discordBrowserPath';
 const LAUNCHER_SETTINGS_FILE = 'launcher-settings.json';
 const DIAGNOSTIC_LOG_FILE = 'launcher-diagnostics.log';
 const DIAGNOSTIC_LOG_MAX_BYTES = 1024 * 1024;
+const SOFTWARE_RENDERING_SWITCH = '--disable-gpu';
 
 function parseGameUrl(value) {
   let parsed;
@@ -102,6 +103,22 @@ function initializeFlash() {
   app.commandLine.appendSwitch('enable-plugins');
   app.commandLine.appendSwitch('allow-outdated-plugins');
   return true;
+}
+
+function isSoftwareRenderingRequested() {
+  return process.argv.includes(SOFTWARE_RENDERING_SWITCH);
+}
+
+function restartWithSoftwareRendering(disabled) {
+  const args = process.argv.slice(1)
+    .filter((argument) => argument !== SOFTWARE_RENDERING_SWITCH);
+  if (disabled) args.push(SOFTWARE_RENDERING_SWITCH);
+
+  writeDiagnostic('restart-rendering-mode', {
+    softwareRenderingRequested: disabled,
+  });
+  app.relaunch({ args });
+  app.exit(0);
 }
 
 function getDiagnosticLogPath() {
@@ -890,6 +907,12 @@ function createWindow() {
             mainWindow.reload();
           }
         },
+        {
+          label: isSoftwareRenderingRequested()
+            ? 'Restart with Hardware Acceleration'
+            : 'Restart with Software Rendering',
+          click: () => restartWithSoftwareRendering(!isSoftwareRenderingRequested())
+        },
         { type: 'separator' },
         { role: 'quit' }
       ]
@@ -1013,6 +1036,7 @@ app.whenReady().then(() => {
     architecture: process.arch,
     electron: process.versions.electron,
     chrome: process.versions.chrome,
+    softwareRenderingRequested: isSoftwareRenderingRequested(),
     flashInitialized: flashAvailable,
     flashRuntime: getFlashRuntimeDiagnostics(),
   });
