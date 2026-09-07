@@ -8,6 +8,7 @@
     "download:plugins": "node scripts/download-plugins.js",
     "start": "electron .",
     "start:mac": "arch -x86_64 electron .",
+    "test": "node --test scripts/repair-electron-install.test.js",
     "build": "npm run download:plugins && electron-builder --publish never",
     "build:mac": "node scripts/download-plugins.js --platform darwin && electron-builder --mac --x64 --dir --publish never && ditto -c -k --sequesterRsrc --keepParent 'dist/mac/Flash Player.app' dist/FV-Launcher-macos-${npm_package_version}.zip",
     "build:win": "node scripts/download-plugins.js --platform win32 && electron-builder --win --publish never",

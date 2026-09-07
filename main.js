@@ -8,6 +8,8 @@ const fs = require('fs');
 const DEFAULT_GAME_URL = 'https://fv.ktrestoration.xyz/login';
 const DISCORD_BROWSER_SETTING = 'discordBrowserPath';
 const LAUNCHER_SETTINGS_FILE = 'launcher-settings.json';
+const DIAGNOSTIC_LOG_FILE = 'launcher-diagnostics.log';
+const DIAGNOSTIC_LOG_MAX_BYTES = 1024 * 1024;
 
 function parseGameUrl(value) {
   let parsed;
@@ -87,6 +89,121 @@ function initializeFlash() {
   app.commandLine.appendSwitch('enable-plugins');
   app.commandLine.appendSwitch('allow-outdated-plugins');
   return true;
+}
+
+function getDiagnosticLogPath() {
+  return path.join(app.getPath('userData'), DIAGNOSTIC_LOG_FILE);
+}
+
+function diagnosticUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return String(value || '').slice(0, 400);
+  }
+}
+
+function diagnosticMessage(value) {
+  return String(value || '')
+    .replace(/([?&](?:token|code|state|callback|authorization|password)=)[^\s&]+/gi, '$1[redacted]')
+    .slice(0, 800);
+}
+
+function writeDiagnostic(event, details = {}) {
+  try {
+    const logPath = getDiagnosticLogPath();
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size >= DIAGNOSTIC_LOG_MAX_BYTES) {
+      fs.renameSync(logPath, `${logPath}.1`);
+    }
+    fs.appendFileSync(logPath, `${JSON.stringify({ time: new Date().toISOString(), event, ...details })}\n`);
+  } catch {
+    // Diagnostics must never interfere with launching the game.
+  }
+}
+
+function getFlashRuntimeDiagnostics() {
+  const flashPath = getFlashPluginPath();
+  const result = {
+    path: flashPath || null,
+    expectedVersion: getFlashVersion(),
+    available: Boolean(flashPath && fs.existsSync(flashPath)),
+  };
+
+  if (!result.available || !flashPath) return result;
+
+  try {
+    result.bytes = fs.statSync(flashPath).size;
+    result.sha256 = crypto.createHash('sha256').update(fs.readFileSync(flashPath)).digest('hex');
+  } catch (error) {
+    result.error = diagnosticMessage(error.message);
+  }
+
+  return result;
+}
+
+function isFlashResource(value) {
+  try {
+    const pathname = new URL(value).pathname;
+    return pathname.includes('/FV_Preloader.swf')
+      || pathname.includes('/FarmGame-')
+      || pathname.includes('/xml/gz/v855038-locale-v3/');
+  } catch {
+    return false;
+  }
+}
+
+function attachWebContentsDiagnostics(contents) {
+  contents.on('did-fail-load', (event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    writeDiagnostic('navigation-failed', {
+      errorCode,
+      error: diagnosticMessage(errorDescription),
+      url: diagnosticUrl(validatedUrl),
+      isMainFrame,
+    });
+  });
+
+  contents.on('plugin-crashed', (event, name, version) => {
+    writeDiagnostic('plugin-crashed', { name, version });
+  });
+
+  contents.on('render-process-gone', (event, details) => {
+    writeDiagnostic('renderer-process-gone', {
+      reason: details && details.reason,
+      exitCode: details && details.exitCode,
+    });
+  });
+
+  contents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level >= 2) {
+      writeDiagnostic('renderer-console-error', {
+        level,
+        message: diagnosticMessage(message),
+        line,
+        source: diagnosticUrl(sourceId),
+      });
+    }
+  });
+
+  const requests = contents.session.webRequest;
+  requests.onCompleted((details) => {
+    if (isFlashResource(details.url)) {
+      writeDiagnostic('flash-resource-completed', {
+        url: diagnosticUrl(details.url),
+        statusCode: details.statusCode,
+        fromCache: details.fromCache,
+      });
+    }
+  });
+  requests.onErrorOccurred((details) => {
+    if (isFlashResource(details.url)) {
+      writeDiagnostic('flash-resource-failed', {
+        url: diagnosticUrl(details.url),
+        error: diagnosticMessage(details.error),
+      });
+    }
+  });
 }
 
 function isAllowedGameUrl(value) {
@@ -552,6 +669,28 @@ let mainWindow;
 let flashAvailable = false;
 let launcherLoginInProgress = false;
 
+ipcMain.on('launcher-debug', (event, report) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+  if (!report || typeof report !== 'object') return;
+
+  writeDiagnostic('flash-dom-state', {
+    stage: typeof report.stage === 'string' ? report.stage : 'unknown',
+    url: diagnosticUrl(report.url),
+    plugins: Array.isArray(report.plugins) ? report.plugins.slice(0, 5) : [],
+    container: report.container && typeof report.container === 'object' ? {
+      width: Number(report.container.width) || 0,
+      height: Number(report.container.height) || 0,
+      children: Number(report.container.children) || 0,
+    } : null,
+    flash: report.flash && typeof report.flash === 'object' ? {
+      tagName: String(report.flash.tagName || '').slice(0, 20),
+      type: String(report.flash.type || '').slice(0, 100),
+      width: String(report.flash.width || '').slice(0, 20),
+      height: String(report.flash.height || '').slice(0, 20),
+    } : null,
+  });
+});
+
 function beginLauncherDiscordLogin(loginUrl) {
   if (launcherLoginInProgress) return;
   launcherLoginInProgress = true;
@@ -640,6 +779,22 @@ function beginLauncherDiscordLogin(loginUrl) {
   }, 5 * 60 * 1000);
 }
 
+function handleWindowOpen(url) {
+  if (isDiscordLoginRequest(url)) {
+    beginLauncherDiscordLogin(url);
+    return;
+  }
+
+  if (isAllowedGameUrl(url)) {
+    Promise.resolve(shell.openExternal(url)).catch((error) => {
+      writeDiagnostic('external-window-failed', {
+        url: diagnosticUrl(url),
+        error: diagnosticMessage(error.message),
+      });
+    });
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: CONFIG.width,
@@ -692,6 +847,15 @@ function createWindow() {
           label: 'Use Default Browser for Discord Sign-In',
           click: () => {
             useDefaultDiscordBrowser();
+          }
+        },
+        {
+          label: 'Open Diagnostics Folder',
+          click: async () => {
+            const error = await shell.openPath(app.getPath('userData'));
+            if (error) {
+              dialog.showErrorBox('Diagnostics Folder Unavailable', error);
+            }
           }
         },
         { type: 'separator' },
@@ -782,6 +946,8 @@ function createWindow() {
   const menu = Menu.buildFromTemplate(menuTemplate);
   Menu.setApplicationMenu(menu);
 
+  attachWebContentsDiagnostics(mainWindow.webContents);
+
   if (flashAvailable) {
     mainWindow.loadURL(CONFIG.gameUrl);
   } else {
@@ -801,13 +967,19 @@ function createWindow() {
     if (!isAllowedGameUrl(navigationUrl)) event.preventDefault();
   });
 
-  // Electron 11 predates setWindowOpenHandler(); 'new-window' is the
-  // equivalent hook on this runtime. The pinned Electron version cannot be
-  // raised because Chromium dropped PPAPI/Flash support in Electron 12.
-  mainWindow.webContents.on('new-window', (event, url) => {
-    event.preventDefault();
-    if (isAllowedGameUrl(url)) shell.openExternal(url);
-  });
+  if (typeof mainWindow.webContents.setWindowOpenHandler === 'function') {
+    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      handleWindowOpen(url);
+      return { action: 'deny' };
+    });
+  } else {
+    // Electron 11 uses the legacy event; invoking the newer API aborts the
+    // main process after the page begins loading, leaving a half-working UI.
+    mainWindow.webContents.on('new-window', (event, url) => {
+      event.preventDefault();
+      handleWindowOpen(url);
+    });
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -818,6 +990,17 @@ function createWindow() {
 flashAvailable = initializeFlash();
 
 app.whenReady().then(() => {
+  writeDiagnostic('launcher-started', {
+    platform: process.platform,
+    architecture: process.arch,
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    flashInitialized: flashAvailable,
+    flashRuntime: getFlashRuntimeDiagnostics(),
+  });
+  app.getGPUInfo('basic')
+    .then((gpu) => writeDiagnostic('gpu-info', { gpu }))
+    .catch((error) => writeDiagnostic('gpu-info-failed', { error: diagnosticMessage(error.message) }));
   createWindow();
 
   app.on('activate', () => {

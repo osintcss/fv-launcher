@@ -154,6 +154,14 @@ sign-ins. **Use Default Browser for Discord Sign-In** removes the override. The
 launcher always passes the same HTTPS OAuth URL and keeps the localhost callback
 flow.
 
+### Diagnostics
+
+The launcher writes a bounded local `launcher-diagnostics.log` file in its
+user-data folder. It records the Flash runtime checksum, renderer failures,
+Flash DOM state, and the preloader/game SWF request outcomes without recording
+page content or URL query values. Use **File -> Open Diagnostics Folder** to
+retrieve it after reproducing a blank game screen.
+
 Windows:
 
 ```batch

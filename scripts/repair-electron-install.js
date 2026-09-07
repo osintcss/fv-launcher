@@ -42,6 +42,8 @@ const ELECTRON_DIR = path.join(__dirname, '..', 'node_modules', 'electron');
 const DIST_DIR = path.join(ELECTRON_DIR, 'dist');
 const PATH_TXT = path.join(ELECTRON_DIR, 'path.txt');
 const PLATFORM_PATH = 'Electron.app/Contents/MacOS/Electron';
+const REPAIR_DIST_DIR = `${DIST_DIR}.repair`;
+const BACKUP_DIST_DIR = `${DIST_DIR}.backup`;
 
 // macOS is the only platform confirmed affected; everywhere else electron's
 // own installer is left completely alone.
@@ -112,18 +114,15 @@ function machoArchs(binaryPath) {
  * an arm64 install is "correct" as far as electron's installer is concerned
  * but is exactly the state that breaks `npm run start:mac`.
  */
-function inspectInstall(version) {
-  const executable = path.join(DIST_DIR, PLATFORM_PATH);
+function inspectDist(version, distDir = DIST_DIR) {
+  const executable = path.join(distDir, PLATFORM_PATH);
 
   try {
-    if (fs.readFileSync(path.join(DIST_DIR, 'version'), 'utf-8').replace(/^v/, '') !== version) {
+    if (fs.readFileSync(path.join(distDir, 'version'), 'utf-8').replace(/^v/, '') !== version) {
       return { ok: false, reason: 'dist/version is missing or does not match package.json' };
     }
-    if (fs.readFileSync(PATH_TXT, 'utf-8') !== PLATFORM_PATH) {
-      return { ok: false, reason: 'path.txt is missing or does not point at the app bundle' };
-    }
   } catch {
-    return { ok: false, reason: 'dist/version or path.txt is unreadable (extraction did not finish)' };
+    return { ok: false, reason: 'dist/version is missing or unreadable (extraction did not finish)' };
   }
 
   if (!fs.existsSync(executable)) {
@@ -141,8 +140,40 @@ function inspectInstall(version) {
   return { ok: true, archs };
 }
 
+function inspectInstall(version) {
+  try {
+    if (fs.readFileSync(PATH_TXT, 'utf-8') !== PLATFORM_PATH) {
+      return { ok: false, reason: 'path.txt is missing or does not point at the app bundle' };
+    }
+  } catch {
+    return { ok: false, reason: 'path.txt is missing or unreadable' };
+  }
+
+  return inspectDist(version);
+}
+
 function rmrf(target) {
   fs.rmSync(target, { recursive: true, force: true });
+}
+
+function replaceDist(replacementDir) {
+  rmrf(BACKUP_DIST_DIR);
+  let movedExistingDist = false;
+
+  try {
+    if (fs.existsSync(DIST_DIR)) {
+      fs.renameSync(DIST_DIR, BACKUP_DIST_DIR);
+      movedExistingDist = true;
+    }
+    fs.renameSync(replacementDir, DIST_DIR);
+  } catch (error) {
+    if (!fs.existsSync(DIST_DIR) && movedExistingDist && fs.existsSync(BACKUP_DIST_DIR)) {
+      fs.renameSync(BACKUP_DIST_DIR, DIST_DIR);
+    }
+    throw error;
+  }
+
+  rmrf(BACKUP_DIST_DIR);
 }
 
 async function main() {
@@ -189,15 +220,25 @@ async function main() {
 
   log(`extracting ${path.basename(zipPath)} with ditto`);
 
-  // Remove any half-extracted (or wrong-arch) tree first so ditto cannot
-  // merge new files into stale ones.
-  rmrf(DIST_DIR);
-  fs.mkdirSync(DIST_DIR, { recursive: true });
+  // Validate a complete replacement before touching the installed runtime.
+  // A failed download or extraction must leave the existing installation in
+  // place so a retry is possible without another full npm install.
+  rmrf(REPAIR_DIST_DIR);
+  fs.mkdirSync(REPAIR_DIST_DIR, { recursive: true });
 
   // `ditto -x -k` is the macOS-native zip extractor. Unlike extract-zip it
   // handles the symlinks and permissions inside Electron.app correctly, and
   // it fails loudly instead of stalling.
-  execFileSync('/usr/bin/ditto', ['-x', '-k', zipPath, DIST_DIR], { stdio: 'inherit' });
+  try {
+    execFileSync('/usr/bin/ditto', ['-x', '-k', zipPath, REPAIR_DIST_DIR], { stdio: 'inherit' });
+    const replacement = inspectDist(version, REPAIR_DIST_DIR);
+    if (!replacement.ok) {
+      throw new Error(`extraction did not produce a usable runtime: ${replacement.reason}`);
+    }
+    replaceDist(REPAIR_DIST_DIR);
+  } finally {
+    rmrf(REPAIR_DIST_DIR);
+  }
 
   // electron's installer writes this last; index.js throws without it.
   fs.writeFileSync(PATH_TXT, PLATFORM_PATH);
@@ -218,4 +259,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { machoArchs, inspectInstall };
+module.exports = { machoArchs, inspectDist, inspectInstall };
