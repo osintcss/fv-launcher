@@ -9,20 +9,18 @@ function flashPluginDescriptions() {
 
 function reportFlashState(stage) {
   const container = document.getElementById('flashContent');
-  if (!container) return;
-
   const flash = document.getElementById('flashapp')
-    || container.querySelector('embed, object');
-  const bounds = container.getBoundingClientRect();
+    || (container && container.querySelector('embed, object'));
+  const bounds = container && container.getBoundingClientRect();
   ipcRenderer.send('launcher-debug', {
     stage,
     url: `${location.origin}${location.pathname}`,
     plugins: flashPluginDescriptions(),
-    container: {
+    container: container ? {
       width: Math.round(bounds.width),
       height: Math.round(bounds.height),
       children: container.children.length,
-    },
+    } : null,
     flash: flash ? {
       tagName: flash.tagName,
       type: flash.getAttribute('type'),
@@ -31,6 +29,8 @@ function reportFlashState(stage) {
     } : null,
   });
 }
+
+reportFlashState('preload-loaded');
 
 window.addEventListener('DOMContentLoaded', () => {
   reportFlashState('dom-ready');
