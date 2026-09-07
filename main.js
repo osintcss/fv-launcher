@@ -64,6 +64,19 @@ function getFlashPluginPath() {
   }
 }
 
+function getFlashPluginBinaryPath(flashPath) {
+  if (!flashPath) return null;
+  if (process.platform === 'darwin') {
+    return path.join(flashPath, 'Contents', 'MacOS', 'PepperFlashPlayer');
+  }
+  return flashPath;
+}
+
+function hasFlashPlugin(flashPath) {
+  const binaryPath = getFlashPluginBinaryPath(flashPath);
+  return Boolean(binaryPath && fs.existsSync(binaryPath));
+}
+
 function getFlashVersion() {
   const versions = {
     win32: '34.0.0.376',
@@ -80,7 +93,7 @@ function initializeFlash() {
     return false;
   }
 
-  if (!fs.existsSync(flashPath)) {
+  if (!hasFlashPlugin(flashPath)) {
     return false;
   }
 
@@ -125,17 +138,19 @@ function writeDiagnostic(event, details = {}) {
 
 function getFlashRuntimeDiagnostics() {
   const flashPath = getFlashPluginPath();
+  const binaryPath = getFlashPluginBinaryPath(flashPath);
   const result = {
     path: flashPath || null,
+    binaryPath,
     expectedVersion: getFlashVersion(),
-    available: Boolean(flashPath && fs.existsSync(flashPath)),
+    available: hasFlashPlugin(flashPath),
   };
 
-  if (!result.available || !flashPath) return result;
+  if (!result.available || !binaryPath) return result;
 
   try {
-    result.bytes = fs.statSync(flashPath).size;
-    result.sha256 = crypto.createHash('sha256').update(fs.readFileSync(flashPath)).digest('hex');
+    result.bytes = fs.statSync(binaryPath).size;
+    result.sha256 = crypto.createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex');
   } catch (error) {
     result.error = diagnosticMessage(error.message);
   }
