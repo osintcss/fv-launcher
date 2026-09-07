@@ -160,7 +160,8 @@ The launcher writes a bounded local `launcher-diagnostics.log` file in its
 user-data folder. It records the Flash runtime checksum, renderer failures,
 Flash DOM state, and the preloader/game SWF request outcomes without recording
 page content, URL query values, or full local file paths. Use **File -> Open Diagnostics Folder** to
-retrieve it after reproducing a blank game screen.
+retrieve it after reproducing a blank game screen. A new launcher start creates
+a fresh log automatically; the prior session is retained as `.log.1`.
 
 Windows:
 

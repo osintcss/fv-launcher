@@ -143,12 +143,29 @@ function diagnosticMessage(value) {
     .slice(0, 800);
 }
 
+function rotateDiagnosticLog(logPath) {
+  const previousLogPath = `${logPath}.1`;
+  fs.rmSync(previousLogPath, { force: true });
+  if (fs.existsSync(logPath)) fs.renameSync(logPath, previousLogPath);
+}
+
+function startDiagnosticLog() {
+  try {
+    const logPath = getDiagnosticLogPath();
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    rotateDiagnosticLog(logPath);
+    fs.writeFileSync(logPath, '', { encoding: 'utf8', mode: 0o600 });
+  } catch {
+    // Diagnostics must never interfere with launching the game.
+  }
+}
+
 function writeDiagnostic(event, details = {}) {
   try {
     const logPath = getDiagnosticLogPath();
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
     if (fs.existsSync(logPath) && fs.statSync(logPath).size >= DIAGNOSTIC_LOG_MAX_BYTES) {
-      fs.renameSync(logPath, `${logPath}.1`);
+      rotateDiagnosticLog(logPath);
     }
     fs.appendFileSync(logPath, `${JSON.stringify({ time: new Date().toISOString(), event, ...details })}\n`);
   } catch {
@@ -1031,6 +1048,7 @@ function createWindow() {
 flashAvailable = initializeFlash();
 
 app.whenReady().then(() => {
+  startDiagnosticLog();
   writeDiagnostic('launcher-started', {
     platform: process.platform,
     architecture: process.arch,
