@@ -117,15 +117,16 @@ function restartWithSoftwareRendering(disabled) {
   writeDiagnostic('restart-rendering-mode', {
     softwareRenderingRequested: disabled,
   });
+  let child;
   try {
-    // Packaged Windows launchers can have a helper executable as the current
-    // process path. Explicitly naming the application executable prevents
-    // app.relaunch() from trying to restart that helper instead of the app.
-    app.relaunch({ execPath: process.execPath, args });
-    writeDiagnostic('restart-scheduled', {
-      softwareRenderingRequested: disabled,
+    // app.relaunch() can report success without starting a portable Windows
+    // executable. Spawn the real executable directly and wait until the OS
+    // confirms the child exists before closing this instance.
+    child = spawn(process.execPath, args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
     });
-    app.exit(0);
   } catch (error) {
     writeDiagnostic('restart-failed', {
       error: diagnosticMessage(error && error.message),
@@ -134,7 +135,42 @@ function restartWithSoftwareRendering(disabled) {
       'Launcher Restart Failed',
       'The launcher could not restart with the selected rendering mode. Please start it again normally.'
     );
+    return;
   }
+
+  let settled = false;
+  child.once('error', (error) => {
+    if (settled) return;
+    settled = true;
+    writeDiagnostic('restart-failed', {
+      error: diagnosticMessage(error && error.message),
+    });
+    dialog.showErrorBox(
+      'Launcher Restart Failed',
+      'The launcher could not restart with the selected rendering mode. Please start it again normally.'
+    );
+  });
+  child.once('spawn', () => {
+    if (settled) return;
+    settled = true;
+    writeDiagnostic('restart-spawned', {
+      softwareRenderingRequested: disabled,
+    });
+    child.unref();
+    setTimeout(() => app.exit(0), 100);
+  });
+
+  // Keep a failed spawn from leaving the old launcher open forever. The child
+  // is already detached, so this only covers an unusual missing event.
+  setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    child.unref();
+    writeDiagnostic('restart-timeout', {
+      softwareRenderingRequested: disabled,
+    });
+    app.exit(0);
+  }, 2000).unref();
 }
 
 function getDiagnosticLogPath() {
